@@ -21,14 +21,22 @@ export function WordStage({ token }: WordStageProps) {
     const fit = () => {
       const sample = word.querySelector("[data-part]");
       if (!(sample instanceof HTMLElement)) return;
-      const canvas = document.createElement("canvas");
-      const context = canvas.getContext("2d");
-      if (!context) return;
-      context.font = getComputedStyle(sample).font;
-      const needed =
-        context.measureText(before).width +
-        context.measureText(pivot).width +
-        context.measureText(after).width;
+      const computed = getComputedStyle(sample);
+      const probe = document.createElement("span");
+      probe.textContent = `${before}${pivot}${after}`;
+      probe.style.position = "absolute";
+      probe.style.visibility = "hidden";
+      probe.style.whiteSpace = "nowrap";
+      probe.style.fontFamily = computed.fontFamily;
+      probe.style.fontSize = computed.fontSize;
+      probe.style.fontWeight = computed.fontWeight;
+      probe.style.fontStyle = computed.fontStyle;
+      probe.style.letterSpacing = computed.letterSpacing;
+      probe.style.fontVariantLigatures = "none";
+      probe.style.fontFeatureSettings = '"liga" 0, "clig" 0';
+      stage.appendChild(probe);
+      const needed = probe.getBoundingClientRect().width;
+      probe.remove();
       const available = stage.clientWidth * 0.92;
       const scale = needed > available && needed > 0 ? available / needed : 1;
       word.style.transform = scale < 1 ? `scale(${scale})` : "none";
