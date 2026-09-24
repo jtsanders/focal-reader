@@ -77,7 +77,9 @@ const pdf = buildPdf([
   ],
   [
     "The second page follows in reading order.",
-    `A long token sits here ${longToken} and then ends.`,
+    "A long token sits here.",
+    longToken,
+    "and then ends.",
     "Hello, fixture.",
   ],
 ]);
