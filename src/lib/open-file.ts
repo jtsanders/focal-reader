@@ -1,11 +1,11 @@
 import { ExtractError } from "@/lib/extract-error";
 import { extractEpubText } from "@/lib/extract-epub";
 import { extractPdfText } from "@/lib/extract-pdf";
-import { tokenize } from "@/lib/tokenize";
+import { tokenize, type ReadingToken } from "@/lib/tokenize";
 
 export type OpenedText = {
   name: string;
-  words: string[];
+  words: ReadingToken[];
 };
 
 function isPdf(file: File): boolean {

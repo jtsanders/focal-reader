@@ -54,12 +54,29 @@ function findGutter(lines: Glyph[][]): number | null {
   return median(clustered);
 }
 
+type RenderedLine = {
+  text: string;
+  y: number;
+  h: number;
+};
+
+function isChapterHeading(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length < 3 || trimmed.length > 60) return false;
+  if (/^chapter\s+([0-9]+|[ivxlcdm]+)\b/i.test(trimmed)) return true;
+  if (/^(book|part)\s+([0-9]+|[ivxlcdm]+)\b/i.test(trimmed)) return true;
+  return /^(prologue|epilogue|foreword|preface|introduction|afterword)$/i.test(
+    trimmed,
+  );
+}
+
 function linesToText(lines: Glyph[][]): string {
-  const rendered: string[] = [];
+  const rendered: RenderedLine[] = [];
   for (const line of lines) {
     const sorted = [...line].sort((a, b) => a.x - b.x);
     let text = "";
     let cursor = Number.NEGATIVE_INFINITY;
+    let height = 12;
     for (const glyph of sorted) {
       const gap = glyph.x - cursor;
       const needsSpace =
@@ -70,17 +87,38 @@ function linesToText(lines: Glyph[][]): string {
       if (needsSpace) text += " ";
       text += glyph.str;
       cursor = glyph.x + Math.max(glyph.w, 0);
+      height = Math.max(height, glyph.h);
     }
     const trimmed = text.replace(/[ \t]+/g, " ").trim();
     if (!trimmed) continue;
     const previous = rendered[rendered.length - 1];
-    if (previous && /[A-Za-z]-$/.test(previous) && /^[a-z]/.test(trimmed)) {
-      rendered[rendered.length - 1] = previous.slice(0, -1) + trimmed;
+    if (previous && /[A-Za-z]-$/.test(previous.text) && /^[a-z]/.test(trimmed)) {
+      previous.text = previous.text.slice(0, -1) + trimmed;
     } else {
-      rendered.push(trimmed);
+      rendered.push({ text: trimmed, y: sorted[0]?.y ?? 0, h: height });
     }
   }
-  return rendered.join(" ");
+  if (rendered.length === 0) return "";
+
+  const gaps: number[] = [];
+  for (let index = 1; index < rendered.length; index += 1) {
+    const gap = rendered[index].y - rendered[index - 1].y;
+    if (gap > 0) gaps.push(gap);
+  }
+  const typical = gaps.length > 0 ? median(gaps) : rendered[0].h * 1.4;
+
+  let out = rendered[0].text;
+  for (let index = 1; index < rendered.length; index += 1) {
+    const line = rendered[index];
+    const previous = rendered[index - 1];
+    const gap = line.y - previous.y;
+    const paragraph = gap > typical * 1.65 && gap > previous.h * 1.45;
+    if (isChapterHeading(line.text)) out += "\f";
+    else if (paragraph) out += "\n\n";
+    else out += " ";
+    out += line.text;
+  }
+  return out;
 }
 
 function glyphsToText(glyphs: Glyph[]): string {
@@ -150,7 +188,7 @@ export async function extractPdfText(
       if (pageText) pages.push(pageText);
     }
     await doc.cleanup();
-    return pages.join("\n");
+    return pages.join("\n\n");
   } catch (error) {
     const name = errorName(error);
     if (name === "PasswordException") {

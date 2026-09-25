@@ -68,9 +68,12 @@ function htmlToText(markup: string): string {
     node.remove();
   });
   const chunks: string[] = [];
+  let emittedText = false;
   const walk = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE) {
-      chunks.push(node.textContent ?? "");
+      const value = node.textContent ?? "";
+      if (value.trim()) emittedText = true;
+      chunks.push(value);
       return;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
@@ -80,10 +83,12 @@ function htmlToText(markup: string): string {
       chunks.push("\n");
       return;
     }
+    const heading = name === "h1" || name === "h2";
     const block = BLOCK_TAGS.has(name);
-    if (block) chunks.push("\n");
+    if (heading && emittedText) chunks.push("\f");
+    else if (block) chunks.push("\n\n");
     for (const child of element.childNodes) walk(child);
-    if (block) chunks.push("\n");
+    if (block || heading) chunks.push("\n\n");
   };
   if (doc.body) walk(doc.body);
   return chunks
@@ -91,7 +96,12 @@ function htmlToText(markup: string): string {
     .replace(/[\u00ad\u200b\u200c\u200d\ufeff]/g, "")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/[ \t]{2,}/g, " ")
-    .replace(/\n{2,}/g, "\n")
+    .replace(/\n[ \t]*\n/g, "\n\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]*\f[ \t]*/g, "\f")
+    .replace(/\n*\f\n*/g, "\f")
+    .replace(/\f{2,}/g, "\f")
+    .replace(/^\f+/, "")
     .trim();
 }
 
@@ -168,5 +178,5 @@ export async function extractEpubText(
     throw new ExtractError(`“${fileName}” has no readable chapters.`);
   }
 
-  return chapters.join("\n");
+  return chapters.join("\f");
 }

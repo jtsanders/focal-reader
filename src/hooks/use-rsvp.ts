@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { savePosition, loadPosition } from "@/lib/storage";
+import type { ReadingToken } from "@/lib/tokenize";
 import {
   clamp,
+  dwellUnits,
   instantaneousWpm,
   retargetRamp,
   skipWordCount,
@@ -15,7 +17,7 @@ import {
 export type ReaderSession = {
   id: number;
   name: string;
-  words: string[];
+  words: ReadingToken[];
 };
 
 const STALL_SECONDS = 0.25;
@@ -135,12 +137,18 @@ export function useRsvp(
         carryRef.current += (wpm / 60) * dt;
         let next = indexRef.current;
         let moved = false;
-        while (carryRef.current >= 1 && next < last) {
-          carryRef.current -= 1;
+        while (
+          next < last &&
+          carryRef.current >= dwellUnits(words[next].pause)
+        ) {
+          carryRef.current -= dwellUnits(words[next].pause);
           next += 1;
           moved = true;
         }
-        if (next >= last && carryRef.current >= 1) {
+        if (
+          next >= last &&
+          carryRef.current >= dwellUnits(words[last].pause)
+        ) {
           carryRef.current = 0;
           indexRef.current = last;
           if (moved) setIndex(last);
@@ -165,7 +173,7 @@ export function useRsvp(
     };
 
     loopRef.current = requestAnimationFrame(run);
-  }, [persistIndex, words.length]);
+  }, [persistIndex, words]);
 
   const toggle = useCallback(() => {
     if (playingRef.current) pause();

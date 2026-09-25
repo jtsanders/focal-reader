@@ -21,6 +21,7 @@ import {
   WPM_MAX,
   WPM_MIN,
   clamp,
+  dwellUnits,
   formatRemaining,
 } from "@/lib/timing";
 
@@ -285,11 +286,14 @@ function ActiveSession({
 }) {
   const engine = useRsvp(session, targetWpm, skipSeconds);
   const { toggle, skip, restart } = engine;
-  const token = session.words[engine.index] ?? "";
+  const current = session.words[engine.index];
+  const token = current?.text ?? "";
   const pivot = token ? splitPivot(token).pivot : "";
   const wordsLeft = engine.finished
     ? 0
-    : Math.max(0, session.words.length - engine.index);
+    : session.words
+        .slice(engine.index)
+        .reduce((sum, word) => sum + dwellUnits(word.pause), 0);
 
   useEffect(() => {
     restartRef.current = restart;
@@ -337,6 +341,7 @@ function ActiveSession({
       data-pace={engine.playing ? (engine.liveWpm ?? "") : ""}
       data-word={token}
       data-pivot={pivot}
+      data-pause={current?.pause ?? "none"}
     >
       <main className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 sm:px-8">
         {token ? (
@@ -552,7 +557,8 @@ function Controls({
           </div>
         </div>
         <p className="pb-1 text-center text-xs text-[#1a1a1a]/55">
-          Space plays and pauses. Left and right arrows skip.
+          Space plays and pauses. Left and right arrows skip. Sentences,
+          paragraphs, and chapters hold a little longer.
         </p>
       </div>
     </footer>

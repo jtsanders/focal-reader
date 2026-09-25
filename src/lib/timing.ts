@@ -6,6 +6,18 @@ export const SKIP_MAX = 60;
 export const SKIP_DEFAULT = 10;
 export const RAMP_MS = 3000;
 
+/**
+ * How long the current word stays up, in ordinary word-beats at the
+ * instantaneous pace. A sentence holds one extra beat, a paragraph a
+ * little more, and a chapter longer still.
+ */
+export const DWELL_UNITS = {
+  none: 1,
+  sentence: 2,
+  paragraph: 3.5,
+  chapter: 5.5,
+} as const;
+
 export type Ramp = {
   startedAt: number;
   from: number;
@@ -51,6 +63,10 @@ export function retargetRamp(now: number, fromWpm: number, targetWpm: number): R
     to: targetWpm,
     durationMs: RAMP_MS,
   };
+}
+
+export function dwellUnits(pause: keyof typeof DWELL_UNITS): number {
+  return DWELL_UNITS[pause];
 }
 
 /** Words to move for a skip. Uses the set WPM, not the ramp speed. */

@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import { splitPivot } from "./pivot.ts";
 import {
+  dwellUnits,
   easeOutCubic,
   instantaneousWpm,
   skipWordCount,
@@ -87,11 +88,42 @@ describe("skipWordCount", () => {
   });
 });
 
+describe("dwellUnits", () => {
+  it("holds longer at sentences, then paragraphs, then chapters", () => {
+    assert.equal(dwellUnits("none"), 1);
+    assert.ok(dwellUnits("sentence") > dwellUnits("none"));
+    assert.ok(dwellUnits("paragraph") > dwellUnits("sentence"));
+    assert.ok(dwellUnits("chapter") > dwellUnits("paragraph"));
+  });
+});
+
 describe("tokenize", () => {
   it("drops empty tokens and soft hyphens", () => {
-    assert.deepEqual(tokenize("  hello,\n\nread\u00ading  "), [
-      "hello,",
-      "reading",
-    ]);
+    assert.deepEqual(
+      tokenize("  hello,\n\nread\u00ading  ").map((token) => token.text),
+      ["hello,", "reading"],
+    );
+  });
+
+  it("marks sentence, paragraph, and chapter pauses", () => {
+    const tokens = tokenize(
+      "Hello there. Ask Mr. Smith next.\n\nNew paragraph!\fChapter two starts.",
+    );
+    assert.deepEqual(
+      tokens.map((token) => [token.text, token.pause]),
+      [
+        ["Hello", "none"],
+        ["there.", "sentence"],
+        ["Ask", "none"],
+        ["Mr.", "none"],
+        ["Smith", "none"],
+        ["next.", "paragraph"],
+        ["New", "none"],
+        ["paragraph!", "chapter"],
+        ["Chapter", "none"],
+        ["two", "none"],
+        ["starts.", "paragraph"],
+      ],
+    );
   });
 });
