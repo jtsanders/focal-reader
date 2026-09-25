@@ -1,6 +1,7 @@
-import type { TextItem } from "pdfjs-dist/types/src/display/api";
+import type { PDFDocumentProxy, TextItem } from "pdfjs-dist/types/src/display/api";
 
 import { ExtractError } from "@/lib/extract-error";
+import { readDocument, type Chapter } from "@/lib/tokenize";
 
 type Glyph = {
   str: string;
@@ -70,7 +71,7 @@ function isChapterHeading(text: string): boolean {
   );
 }
 
-function linesToText(lines: Glyph[][]): string {
+function linesToText(lines: Glyph[][]): { text: string; headings: Chapter[] } {
   const rendered: RenderedLine[] = [];
   for (const line of lines) {
     const sorted = [...line].sort((a, b) => a.x - b.x);
@@ -98,7 +99,7 @@ function linesToText(lines: Glyph[][]): string {
       rendered.push({ text: trimmed, y: sorted[0]?.y ?? 0, h: height });
     }
   }
-  if (rendered.length === 0) return "";
+  if (rendered.length === 0) return { text: "", headings: [] };
 
   const gaps: number[] = [];
   for (let index = 1; index < rendered.length; index += 1) {
@@ -107,22 +108,32 @@ function linesToText(lines: Glyph[][]): string {
   }
   const typical = gaps.length > 0 ? median(gaps) : rendered[0].h * 1.4;
 
-  let out = rendered[0].text;
-  for (let index = 1; index < rendered.length; index += 1) {
+  let out = "";
+  const headings: Chapter[] = [];
+  for (let index = 0; index < rendered.length; index += 1) {
     const line = rendered[index];
-    const previous = rendered[index - 1];
-    const gap = line.y - previous.y;
-    const paragraph = gap > typical * 1.65 && gap > previous.h * 1.45;
-    if (isChapterHeading(line.text)) out += "\f";
-    else if (paragraph) out += "\n\n";
-    else out += " ";
+    if (index > 0) {
+      const previous = rendered[index - 1];
+      const gap = line.y - previous.y;
+      const paragraph = gap > typical * 1.65 && gap > previous.h * 1.45;
+      if (isChapterHeading(line.text)) out += "\f";
+      else if (paragraph) out += "\n\n";
+      else out += " ";
+    }
+    if (isChapterHeading(line.text)) {
+      headings.push({
+        title: line.text.trim(),
+        index: readDocument(out).words.length,
+        depth: 0,
+      });
+    }
     out += line.text;
   }
-  return out;
+  return { text: out, headings };
 }
 
-function glyphsToText(glyphs: Glyph[]): string {
-  if (glyphs.length === 0) return "";
+function glyphsToText(glyphs: Glyph[]): { text: string; headings: Chapter[] } {
+  if (glyphs.length === 0) return { text: "", headings: [] };
   const provisional = clusterLines(glyphs);
   const gutter = findGutter(provisional);
   const columns = gutter
@@ -131,10 +142,22 @@ function glyphsToText(glyphs: Glyph[]): string {
         glyphs.filter((glyph) => glyph.x + glyph.w / 2 >= gutter),
       ].filter((column) => column.length > 0)
     : [glyphs];
-  return columns
-    .map((column) => linesToText(clusterLines(column)))
-    .filter(Boolean)
-    .join(" ");
+  let text = "";
+  const headings: Chapter[] = [];
+  for (const column of columns) {
+    const part = linesToText(clusterLines(column));
+    if (!part.text) continue;
+    const base = readDocument(text).words.length;
+    if (text) text += " ";
+    headings.push(
+      ...part.headings.map((heading) => ({
+        ...heading,
+        index: base + heading.index,
+      })),
+    );
+    text += part.text;
+  }
+  return { text, headings };
 }
 
 function errorName(error: unknown): string {
@@ -144,10 +167,60 @@ function errorName(error: unknown): string {
   return "";
 }
 
+type OutlineNode = {
+  title?: string;
+  dest?: unknown;
+  items?: OutlineNode[];
+};
+
+async function destinationPage(
+  doc: PDFDocumentProxy,
+  dest: unknown,
+): Promise<number | null> {
+  try {
+    let explicit = dest;
+    if (typeof explicit === "string") explicit = await doc.getDestination(explicit);
+    if (!Array.isArray(explicit) || explicit[0] == null) return null;
+    return await doc.getPageIndex(explicit[0]);
+  } catch {
+    return null;
+  }
+}
+
+async function outlineChapters(
+  doc: PDFDocumentProxy,
+  pageWordStart: number[],
+): Promise<Chapter[]> {
+  let outline: OutlineNode[] | null = null;
+  try {
+    outline = await doc.getOutline();
+  } catch {
+    return [];
+  }
+  if (!outline) return [];
+  const chapters: Chapter[] = [];
+  const walk = async (items: OutlineNode[], depth: number) => {
+    for (const item of items) {
+      const title = item.title?.replace(/\s+/g, " ").trim();
+      const pageIndex = await destinationPage(doc, item.dest);
+      if (title && pageIndex != null && pageWordStart[pageIndex] != null) {
+        const index = pageWordStart[pageIndex];
+        const last = chapters[chapters.length - 1];
+        if (!last || last.index !== index || last.title !== title) {
+          chapters.push({ title, index, depth });
+        }
+      }
+      if (item.items?.length) await walk(item.items, depth + 1);
+    }
+  };
+  await walk(outline, 0);
+  return chapters;
+}
+
 export async function extractPdfText(
   data: ArrayBuffer,
   fileName: string,
-): Promise<string> {
+): Promise<{ text: string; chapters: Chapter[] }> {
   const pdfjs = await import("pdfjs-dist");
   pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
@@ -162,6 +235,9 @@ export async function extractPdfText(
   try {
     const doc = await task.promise;
     const pages: string[] = [];
+    const pageWordStart: number[] = [];
+    const headingChapters: Chapter[] = [];
+    let wordCount = 0;
     for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
       const page = await doc.getPage(pageNumber);
       const viewport = page.getViewport({ scale: 1 });
@@ -184,11 +260,24 @@ export async function extractPdfText(
           h: height,
         });
       }
+      pageWordStart.push(wordCount);
       const pageText = glyphsToText(glyphs);
-      if (pageText) pages.push(pageText);
+      if (!pageText.text) continue;
+      headingChapters.push(
+        ...pageText.headings.map((heading) => ({
+          ...heading,
+          index: wordCount + heading.index,
+        })),
+      );
+      pages.push(pageText.text);
+      wordCount += readDocument(pageText.text).words.length;
     }
+    const outline = await outlineChapters(doc, pageWordStart);
     await doc.cleanup();
-    return pages.join("\n\n");
+    return {
+      text: pages.join("\n\n"),
+      chapters: outline.length > 0 ? outline : headingChapters,
+    };
   } catch (error) {
     const name = errorName(error);
     if (name === "PasswordException") {

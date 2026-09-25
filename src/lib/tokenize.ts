@@ -5,6 +5,12 @@ export type ReadingToken = {
   pause: Pause;
 };
 
+export type Chapter = {
+  title: string;
+  index: number;
+  depth: number;
+};
+
 const ABBREVIATIONS = new Set([
   "mr",
   "mrs",
@@ -48,7 +54,7 @@ function wordsIn(block: string): string[] {
     .filter((token) => token.length > 0);
 }
 
-export function tokenize(text: string): ReadingToken[] {
+function tokenizePlain(text: string): ReadingToken[] {
   const cleaned = text.replace(/[\u00ad\u200b\u200c\u200d\ufeff]/g, "");
   const chapters = cleaned.split("\f");
   const tokens: ReadingToken[] = [];
@@ -73,4 +79,50 @@ export function tokenize(text: string): ReadingToken[] {
   });
 
   return tokens;
+}
+
+export function readDocument(text: string): {
+  words: ReadingToken[];
+  chapters: Chapter[];
+} {
+  const pieces = text.split("\u0001");
+  const words: ReadingToken[] = [];
+  const chapters: Chapter[] = [];
+  let pendingTitle: string | null = null;
+  let pendingDepth = 0;
+
+  for (let pieceIndex = 0; pieceIndex < pieces.length; pieceIndex += 1) {
+    const piece = pieces[pieceIndex] ?? "";
+    if (pieceIndex % 2 === 1) {
+      const splitAt = piece.indexOf("\u0002");
+      let depth = 0;
+      let title = piece;
+      if (splitAt > 0 && /^\d+$/.test(piece.slice(0, splitAt))) {
+        depth = Number(piece.slice(0, splitAt));
+        title = piece.slice(splitAt + 1);
+      }
+      pendingTitle = title.replace(/\s+/g, " ").trim();
+      pendingDepth = depth;
+      continue;
+    }
+    if (pendingTitle) {
+      const last = chapters[chapters.length - 1];
+      if (!last || last.index !== words.length || last.title !== pendingTitle) {
+        chapters.push({
+          title: pendingTitle,
+          index: words.length,
+          depth: pendingDepth,
+        });
+      }
+      pendingTitle = null;
+      pendingDepth = 0;
+    }
+    words.push(...tokenizePlain(piece));
+  }
+
+  return { words, chapters };
+}
+
+export function tokenize(text: string): ReadingToken[] {
+  return readDocument(text).words;
 }

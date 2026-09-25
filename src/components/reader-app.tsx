@@ -130,7 +130,12 @@ export function ReaderApp() {
     requestRef.current += 1;
     const words = tokenize(SAMPLE_TEXT);
     sessionCount.current += 1;
-    setSession({ id: sessionCount.current, name: SAMPLE_NAME, words });
+    setSession({
+      id: sessionCount.current,
+      name: SAMPLE_NAME,
+      words,
+      chapters: [],
+    });
     setPhase({ kind: "ready" });
   }, []);
 
@@ -145,6 +150,7 @@ export function ReaderApp() {
         id: sessionCount.current,
         name: opened.name,
         words: opened.words,
+        chapters: opened.chapters,
       });
       setPhase({ kind: "ready" });
     } catch (error) {
@@ -324,6 +330,12 @@ function ActiveSession({
     return () => window.removeEventListener("keydown", onKey);
   }, [skip, toggle]);
 
+  const chapterValue = session.chapters.reduce(
+    (chosen, chapter, position) =>
+      chapter.index <= engine.index ? position : chosen,
+    0,
+  );
+
   const pace =
     engine.playing && engine.liveWpm != null
       ? Math.abs(engine.liveWpm - targetWpm) > 1
@@ -342,7 +354,31 @@ function ActiveSession({
       data-word={token}
       data-pivot={pivot}
       data-pause={current?.pause ?? "none"}
+      data-chapters={session.chapters.length}
     >
+      {session.chapters.length > 0 ? (
+        <div className="flex shrink-0 items-center gap-3 px-4 pt-1 sm:px-8">
+          <label htmlFor="chapters" className="shrink-0 text-sm text-[#1a1a1a]/70">
+            Chapter
+          </label>
+          <select
+            id="chapters"
+            aria-label="Chapters"
+            className="h-11 min-w-0 flex-1 truncate rounded-lg border border-[#1a1a1a]/20 bg-[#e8d5b8] px-3 text-base"
+            value={String(chapterValue)}
+            onChange={(event) => {
+              const chapter = session.chapters[Number(event.target.value)];
+              if (chapter) engine.seek(chapter.index);
+            }}
+          >
+            {session.chapters.map((chapter, position) => (
+              <option key={`${position}-${chapter.title}`} value={position}>
+                {`${"\u00a0\u00a0".repeat(chapter.depth)}${chapter.title}`}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
       <main className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 sm:px-8">
         {token ? (
           <div className="flex w-full max-w-5xl flex-col items-center">

@@ -23,7 +23,7 @@ function pageStream(lines) {
   return commands.join("\n");
 }
 
-function buildPdf(pages) {
+function buildPdf(pages, outlineEntries = []) {
   const objects = [];
   const add = (body) => {
     objects.push(body);
@@ -49,7 +49,44 @@ function buildPdf(pages) {
     objects[pageIds[i] - 1] =
       `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 612 792] /Contents ${contentIds[i]} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> >> >>`;
   }
-  const catalogId = add(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+
+  let outlinesId = null;
+  if (outlineEntries.length > 0) {
+    objects.push("");
+    outlinesId = objects.length;
+    const fill = (entries, parentId) => {
+      const ids = entries.map(() => add(""));
+      entries.forEach((entry, index) => {
+        const childIds = entry.children?.length
+          ? fill(entry.children, ids[index])
+          : [];
+        const parts = [
+          "<<",
+          `/Title (${escapePdf(entry.title)})`,
+          `/Parent ${parentId} 0 R`,
+          `/Dest [${pageIds[entry.page]} 0 R /Fit]`,
+        ];
+        if (index > 0) parts.push(`/Prev ${ids[index - 1]} 0 R`);
+        if (index < ids.length - 1) parts.push(`/Next ${ids[index + 1]} 0 R`);
+        if (childIds.length > 0) {
+          parts.push(
+            `/First ${childIds[0]} 0 R`,
+            `/Last ${childIds[childIds.length - 1]} 0 R`,
+            `/Count ${childIds.length}`,
+          );
+        }
+        parts.push(">>");
+        objects[ids[index] - 1] = parts.join(" ");
+      });
+      return ids;
+    };
+    const topIds = fill(outlineEntries, outlinesId);
+    objects[outlinesId - 1] =
+      `<< /Type /Outlines /First ${topIds[0]} 0 R /Last ${topIds[topIds.length - 1]} 0 R /Count ${topIds.length} >>`;
+  }
+
+  const outlineRef = outlinesId ? ` /Outlines ${outlinesId} 0 R` : "";
+  const catalogId = add(`<< /Type /Catalog /Pages ${pagesId} 0 R${outlineRef} >>`);
 
   let pdf = "%PDF-1.4\n";
   const offsets = [0];
@@ -69,20 +106,26 @@ function buildPdf(pages) {
 
 const longToken = "SupercalifragilisticexpialidociousReadingToken";
 
-const pdf = buildPdf([
+const pdf = buildPdf(
   [
-    "This fixture PDF opens with a harbor note.",
-    "The word reading should keep its red letter still.",
-    "Page one comes before page two.",
+    [
+      "This fixture PDF opens with a harbor note.",
+      "The word reading should keep its red letter still.",
+      "Page one comes before page two.",
+    ],
+    [
+      "The second page follows in reading order.",
+      "A long token sits here.",
+      longToken,
+      "and then ends.",
+      "Hello, fixture.",
+    ],
   ],
   [
-    "The second page follows in reading order.",
-    "A long token sits here.",
-    longToken,
-    "and then ends.",
-    "Hello, fixture.",
+    { title: "Harbor", page: 0 },
+    { title: "Crossing", page: 1 },
   ],
-]);
+);
 
 const container = `<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
@@ -100,6 +143,7 @@ const opf = `<?xml version="1.0" encoding="UTF-8"?>
     <dc:language>en</dc:language>
   </metadata>
   <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
     <item id="harbor" href="harbor.xhtml" media-type="application/xhtml+xml"/>
     <item id="crossing" href="crossing.xhtml" media-type="application/xhtml+xml"/>
     <item id="style" href="style.css" media-type="text/css"/>
@@ -132,7 +176,7 @@ const crossing = `<?xml version="1.0" encoding="UTF-8"?>
   <body>
     <h1>Crossing</h1>
     <p>The crossing chapter comes second, after the harbor.</p>
-    <p>A red letter holds the word reading still.</p>
+    <p id="still">A red letter holds the word reading still.</p>
   </body>
 </html>
 `;
@@ -143,7 +187,26 @@ writeFileSync(join(fixtures, "harbor-note.pdf"), pdf);
 const zip = new JSZip();
 zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
 zip.file("META-INF/container.xml", container);
+const nav = `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+  <head><title>Contents</title></head>
+  <body>
+    <nav epub:type="toc">
+      <ol>
+        <li><a href="harbor.xhtml">Harbor</a></li>
+        <li><a href="crossing.xhtml">Crossing</a>
+          <ol>
+            <li><a href="crossing.xhtml#still">Red letter</a></li>
+          </ol>
+        </li>
+      </ol>
+    </nav>
+  </body>
+</html>
+`;
+
 zip.file("OEBPS/content.opf", opf);
+zip.file("OEBPS/nav.xhtml", nav);
 zip.file("OEBPS/harbor.xhtml", harbor);
 zip.file("OEBPS/crossing.xhtml", crossing);
 zip.file("OEBPS/style.css", "body { font-family: serif; }");

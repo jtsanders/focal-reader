@@ -62,13 +62,43 @@ function findZipFile(zip: JSZip, path: string) {
   return match ? zip.file(match) : null;
 }
 
-function htmlToText(markup: string): string {
+type TocTarget = {
+  title: string;
+  path: string;
+  fragment: string;
+  depth: number;
+  used: boolean;
+};
+
+function cleanTitle(value: string): string {
+  return value
+    .replace(/[\u0001\u0002]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
+function htmlToText(markup: string, targets: TocTarget[]): string {
   const doc = new DOMParser().parseFromString(markup, "text/html");
   doc.querySelectorAll("script, style, noscript, svg").forEach((node) => {
     node.remove();
   });
   const chunks: string[] = [];
   let emittedText = false;
+  const useToc = targets.length > 0;
+
+  const mark = (fragment: string) => {
+    for (const target of targets) {
+      if (target.used || target.fragment !== fragment) continue;
+      const title = cleanTitle(target.title);
+      if (!title) continue;
+      chunks.push(`\u0001${target.depth}\u0002${title}\u0001`);
+      target.used = true;
+    }
+  };
+
+  mark("");
+
   const walk = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE) {
       const value = node.textContent ?? "";
@@ -83,15 +113,27 @@ function htmlToText(markup: string): string {
       chunks.push("\n");
       return;
     }
+    const id = element.getAttribute("id");
+    if (id) mark(decodeURIComponent(id));
     const heading = name === "h1" || name === "h2";
     const block = BLOCK_TAGS.has(name);
-    if (heading && emittedText) chunks.push("\f");
-    else if (block) chunks.push("\n\n");
+    if (heading) {
+      const title = cleanTitle(element.textContent ?? "");
+      if (!useToc && title) {
+        if (emittedText) chunks.push("\f");
+        const depth = name === "h1" ? 0 : 1;
+        chunks.push(`\u0001${depth}\u0002${title}\u0001`);
+      } else if (useToc && emittedText) {
+        chunks.push("\f");
+      }
+    } else if (block) {
+      chunks.push("\n\n");
+    }
     for (const child of element.childNodes) walk(child);
     if (block || heading) chunks.push("\n\n");
   };
   if (doc.body) walk(doc.body);
-  return chunks
+  const text = chunks
     .join("")
     .replace(/[\u00ad\u200b\u200c\u200d\ufeff]/g, "")
     .replace(/[ \t]+\n/g, "\n")
@@ -103,6 +145,95 @@ function htmlToText(markup: string): string {
     .replace(/\f{2,}/g, "\f")
     .replace(/^\f+/, "")
     .trim();
+  if (useToc && !targets.some((target) => target.used)) {
+    return htmlToText(markup, []);
+  }
+  return text;
+}
+
+function childByLocalName(element: Element, localName: string): Element | undefined {
+  return Array.from(element.children).find(
+    (child) => child.localName?.toLowerCase() === localName,
+  );
+}
+
+function tocTarget(
+  href: string,
+  title: string,
+  baseDir: string,
+  depth: number,
+): TocTarget | null {
+  const cleaned = cleanTitle(title);
+  if (!href || !cleaned || href.startsWith("http")) return null;
+  const [path, fragment = ""] = href.split("#");
+  return {
+    title: cleaned,
+    path: resolveZipPath(baseDir, path ?? ""),
+    fragment: decodeURIComponent(fragment),
+    depth,
+    used: false,
+  };
+}
+
+function tocFromNav(doc: Document, navDir: string): TocTarget[] {
+  const navs = elementsByLocalName(doc, "nav");
+  const tocNav =
+    navs.find((nav) =>
+      (nav.getAttribute("epub:type") ?? nav.getAttribute("type") ?? "")
+        .split(/\s+/)
+        .includes("toc"),
+    ) ?? navs[0];
+  if (!tocNav) return [];
+  const targets: TocTarget[] = [];
+  const walk = (element: Element, depth: number) => {
+    for (const child of Array.from(element.children)) {
+      const name = child.localName.toLowerCase();
+      if (name === "li") {
+        const link = Array.from(child.children).find(
+          (node) => node.localName.toLowerCase() === "a",
+        );
+        if (link) {
+          const target = tocTarget(
+            link.getAttribute("href") ?? "",
+            link.textContent ?? "",
+            navDir,
+            depth,
+          );
+          if (target) targets.push(target);
+        }
+        for (const nested of Array.from(child.children)) {
+          const nestedName = nested.localName.toLowerCase();
+          if (nestedName === "ol" || nestedName === "ul") walk(nested, depth + 1);
+        }
+      } else if (name === "ol" || name === "ul" || name === "nav") {
+        walk(child, depth);
+      }
+    }
+  };
+  walk(tocNav, 0);
+  return targets;
+}
+
+function tocFromNcx(doc: Document, ncxDir: string): TocTarget[] {
+  const map = elementsByLocalName(doc, "navmap")[0] ?? doc.documentElement;
+  const collect = (element: Element, depth: number): TocTarget[] => {
+    const targets: TocTarget[] = [];
+    for (const child of Array.from(element.children)) {
+      if (child.localName.toLowerCase() !== "navpoint") continue;
+      const label = childByLocalName(child, "navlabel");
+      const content = childByLocalName(child, "content");
+      const target = tocTarget(
+        content?.getAttribute("src") ?? "",
+        label?.textContent ?? "",
+        ncxDir,
+        depth,
+      );
+      if (target) targets.push(target);
+      targets.push(...collect(child, depth + 1));
+    }
+    return targets;
+  };
+  return collect(map, 0);
 }
 
 function isHtmlItem(href: string, mediaType: string): boolean {
@@ -164,13 +295,60 @@ export async function extractEpubText(
     throw new ExtractError(`“${fileName}” has no readable chapters.`);
   }
 
+  const spineElement = elementsByLocalName(opf, "spine")[0];
+  const tocId = spineElement?.getAttribute("toc");
+  let toc: TocTarget[] = [];
+  const ncxEntry = [...manifest.entries()].find(
+    ([id, item]) =>
+      item.mediaType === "application/x-dtbncx+xml" ||
+      (tocId != null && id === tocId && item.href.toLowerCase().endsWith(".ncx")),
+  );
+  if (ncxEntry) {
+    const ncxPath = resolveZipPath(opfDir, ncxEntry[1].href);
+    const ncxFile = findZipFile(zip, ncxPath);
+    if (ncxFile) {
+      const ncx = parseXml(await ncxFile.async("string"), fileName);
+      const ncxDir = ncxPath.includes("/")
+        ? ncxPath.slice(0, ncxPath.lastIndexOf("/") + 1)
+        : "";
+      toc = tocFromNcx(ncx, ncxDir);
+    }
+  }
+  if (toc.length === 0) {
+    const navEntry = [...manifest.entries()].find(([, item]) =>
+      item.href.toLowerCase().includes("nav."),
+    );
+    const navByProperties = elementsByLocalName(opf, "item").find((item) =>
+      (item.getAttribute("properties") ?? "").split(/\s+/).includes("nav"),
+    );
+    const navHref = navByProperties?.getAttribute("href") ?? navEntry?.[1].href;
+    if (navHref) {
+      const navPath = resolveZipPath(opfDir, navHref);
+      const navFile = findZipFile(zip, navPath);
+      if (navFile) {
+        const nav = new DOMParser().parseFromString(
+          await navFile.async("string"),
+          "text/html",
+        );
+        const navDir = navPath.includes("/")
+          ? navPath.slice(0, navPath.lastIndexOf("/") + 1)
+          : "";
+        toc = tocFromNav(nav, navDir);
+      }
+    }
+  }
+
   const chapters: string[] = [];
   for (const idref of spine) {
     const item = manifest.get(idref);
     if (!item || !isHtmlItem(item.href, item.mediaType)) continue;
-    const chapterFile = findZipFile(zip, resolveZipPath(opfDir, item.href));
+    const chapterPath = resolveZipPath(opfDir, item.href);
+    const chapterFile = findZipFile(zip, chapterPath);
     if (!chapterFile) continue;
-    const text = htmlToText(await chapterFile.async("string"));
+    const targets = toc.filter(
+      (target) => target.path.toLowerCase() === chapterPath.toLowerCase(),
+    );
+    const text = htmlToText(await chapterFile.async("string"), targets);
     if (text) chapters.push(text);
   }
 

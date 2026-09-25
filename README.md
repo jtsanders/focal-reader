@@ -22,6 +22,7 @@ npm run dev
 - The words-per-minute control is the target speed (80–1000, default 300). Changing it while playing eases toward the new target instead of jumping. The value is remembered.
 - **Back** and **Ahead** skip by the seconds shown between them (default 10, range 1–60). The skip distance is `seconds × target WPM / 60` words. Arrow keys do the same. Changing the seconds does not move your place. A skip while playing keeps the current pace.
 - The progress bar scrubs through the text. Reopening a file by the same name continues where you left off. **Start over** returns to the first word and pauses; the next play ramps.
+- When a PDF has bookmarks, or an EPUB has a table of contents or chapter headings, a **Chapter** menu lists them. Choosing one jumps straight to that place.
 - The red letter is the pivot. Among letters and digits only, it is `floor((length - 1) / 2)`. Punctuation stays on the word. “reading” marks **d**. “hello,” marks **l**.
 
 Small files for a quick try live in `fixtures/` (`harbor-note.pdf` and `ferry-note.epub`). Regenerate them with `npm run fixtures`.

@@ -9,7 +9,7 @@ import {
   skipWordCount,
   startRamp,
 } from "./timing.ts";
-import { tokenize } from "./tokenize.ts";
+import { readDocument, tokenize } from "./tokenize.ts";
 
 describe("splitPivot", () => {
   it("highlights d in reading", () => {
@@ -103,6 +103,28 @@ describe("tokenize", () => {
       tokenize("  hello,\n\nread\u00ading  ").map((token) => token.text),
       ["hello,", "reading"],
     );
+  });
+
+  it("lists chapter titles and their starting words", () => {
+    const document = readDocument(
+      "\u0001Harbor\u0001The harbor waits.\f\u0001Crossing\u0001The crossing begins.",
+    );
+    assert.deepEqual(document.chapters, [
+      { title: "Harbor", index: 0, depth: 0 },
+      { title: "Crossing", index: 3, depth: 0 },
+    ]);
+    assert.equal(document.words[3]?.text, "The");
+  });
+
+  it("keeps nested chapter depth on the later title", () => {
+    const document = readDocument(
+      "\u00010\u0002Harbor\u0001The harbor waits. \u00011\u0002Pier\u0001The pier is quiet.",
+    );
+    assert.deepEqual(document.chapters, [
+      { title: "Harbor", index: 0, depth: 0 },
+      { title: "Pier", index: 3, depth: 1 },
+    ]);
+    assert.equal(document.words[3]?.text, "The");
   });
 
   it("marks sentence, paragraph, and chapter pauses", () => {

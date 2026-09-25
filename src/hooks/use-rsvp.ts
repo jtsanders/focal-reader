@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { savePosition, loadPosition } from "@/lib/storage";
-import type { ReadingToken } from "@/lib/tokenize";
+import type { Chapter, ReadingToken } from "@/lib/tokenize";
 import {
   clamp,
   dwellUnits,
@@ -18,6 +18,7 @@ export type ReaderSession = {
   id: number;
   name: string;
   words: ReadingToken[];
+  chapters: Chapter[];
 };
 
 const STALL_SECONDS = 0.25;

@@ -1,11 +1,12 @@
 import { ExtractError } from "@/lib/extract-error";
 import { extractEpubText } from "@/lib/extract-epub";
 import { extractPdfText } from "@/lib/extract-pdf";
-import { tokenize, type ReadingToken } from "@/lib/tokenize";
+import { readDocument, type Chapter, type ReadingToken } from "@/lib/tokenize";
 
 export type OpenedText = {
   name: string;
   words: ReadingToken[];
+  chapters: Chapter[];
 };
 
 function isPdf(file: File): boolean {
@@ -24,8 +25,11 @@ function isEpub(file: File): boolean {
 export async function openBookFile(file: File): Promise<OpenedText> {
   const buffer = await file.arrayBuffer();
   let text: string;
+  let chapters: Chapter[] = [];
   if (isPdf(file)) {
-    text = await extractPdfText(buffer, file.name);
+    const extracted = await extractPdfText(buffer, file.name);
+    text = extracted.text;
+    chapters = extracted.chapters;
   } else if (isEpub(file)) {
     text = await extractEpubText(buffer, file.name);
   } else {
@@ -34,11 +38,13 @@ export async function openBookFile(file: File): Promise<OpenedText> {
     );
   }
 
-  const words = tokenize(text);
+  const document = readDocument(text);
+  if (chapters.length === 0) chapters = document.chapters;
+  const words = document.words;
   if (words.length === 0) {
     throw new ExtractError(
       `No extractable text in “${file.name}”. If this is a scanned document, it has no text layer to read.`,
     );
   }
-  return { name: file.name, words };
+  return { name: file.name, words, chapters };
 }
