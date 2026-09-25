@@ -5,6 +5,14 @@ import { Pause, Play } from "lucide-react";
 
 import { WordStage } from "@/components/word-stage";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -239,6 +247,7 @@ export function ReaderApp() {
               Start over
             </Button>
           ) : null}
+          <SettingsDialog />
           <Button
             type="button"
             variant="outline"
@@ -271,7 +280,6 @@ export function ReaderApp() {
           phase={phase}
           targetWpm={settings.wpm}
           skipSeconds={settings.skipSeconds}
-          wordSize={settings.wordSize}
           onOpen={() => fileRef.current?.click()}
           onSample={openSample}
         />
@@ -322,6 +330,7 @@ function ActiveSession({
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (isTextEntry(event.target)) return;
+      if (document.querySelector("[data-slot='dialog-content'][data-open]")) return;
       if (event.code === "Space") {
         if (event.repeat) return;
         event.preventDefault();
@@ -409,7 +418,6 @@ function ActiveSession({
         wordsLeft={wordsLeft}
         targetWpm={targetWpm}
         skipSeconds={skipSeconds}
-        wordSize={wordSize}
         onToggle={engine.toggle}
         onSkip={engine.skip}
         onSeek={engine.seek}
@@ -422,14 +430,12 @@ function IdleStage({
   phase,
   targetWpm,
   skipSeconds,
-  wordSize,
   onOpen,
   onSample,
 }: {
   phase: Phase;
   targetWpm: number;
   skipSeconds: number;
-  wordSize: number;
   onOpen: () => void;
   onSample: () => void;
 }) {
@@ -470,7 +476,6 @@ function IdleStage({
         wordsLeft={0}
         targetWpm={targetWpm}
         skipSeconds={skipSeconds}
-        wordSize={wordSize}
         onToggle={() => undefined}
         onSkip={() => undefined}
         onSeek={() => undefined}
@@ -487,7 +492,6 @@ function Controls({
   wordsLeft,
   targetWpm,
   skipSeconds,
-  wordSize,
   onToggle,
   onSkip,
   onSeek,
@@ -499,7 +503,6 @@ function Controls({
   wordsLeft: number;
   targetWpm: number;
   skipSeconds: number;
-  wordSize: number;
   onToggle: () => void;
   onSkip: (direction: -1 | 1) => void;
   onSeek: (index: number) => void;
@@ -580,70 +583,105 @@ function Controls({
           </div>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="word-size">Word size</Label>
-          <div className="flex items-center gap-3">
-            <span className="w-8 font-reading text-sm text-[#1a1a1a]/55">A</span>
-            <Slider
-              aria-label="Word size"
-              min={WORD_SIZE_MIN}
-              max={WORD_SIZE_MAX}
-              step={1}
-              value={[wordSize]}
-              onValueChange={(value) => updateWordSize(sliderValue(value))}
-              className="flex-1"
-            />
-            <span className="w-10 text-right font-reading text-2xl leading-none text-[#1a1a1a]/55">
-              A
-            </span>
-            <NumberField
-              id="word-size"
-              label="Word size percent"
-              value={wordSize}
-              min={WORD_SIZE_MIN}
-              max={WORD_SIZE_MAX}
-              onCommit={updateWordSize}
-              className="h-11 w-[4.5rem] bg-[#e8d5b8] text-center"
-            />
-            <span className="text-sm text-[#1a1a1a]/70">%</span>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="wpm">Words per minute</Label>
-          <div className="flex items-center gap-3">
-            <span className="w-8 text-xs tabular-nums text-[#1a1a1a]/55">
-              {WPM_MIN}
-            </span>
-            <Slider
-              aria-label="Words per minute"
-              min={WPM_MIN}
-              max={WPM_MAX}
-              step={1}
-              value={[targetWpm]}
-              onValueChange={(value) => updateWpm(sliderValue(value))}
-              className="flex-1"
-            />
-            <span className="w-10 text-right text-xs tabular-nums text-[#1a1a1a]/55">
-              {WPM_MAX}
-            </span>
-            <NumberField
-              id="wpm"
-              label="Words per minute"
-              value={targetWpm}
-              min={WPM_MIN}
-              max={WPM_MAX}
-              onCommit={updateWpm}
-              className="h-11 w-[4.5rem] bg-[#e8d5b8] text-center"
-            />
-          </div>
-        </div>
         <p className="pb-1 text-center text-xs text-[#1a1a1a]/55">
           Space plays and pauses. Left and right arrows skip. Sentences,
           paragraphs, and chapters hold a little longer.
         </p>
       </div>
     </footer>
+  );
+}
+
+function SettingsDialog() {
+  const settings = useReaderSettings();
+
+  return (
+    <Dialog>
+      <DialogTrigger
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 bg-[#e8d5b8] px-3"
+          />
+        }
+      >
+        Settings
+      </DialogTrigger>
+      <DialogContent className="top-auto bottom-4 max-h-[min(32rem,calc(100dvh-2rem))] translate-y-0 overflow-y-auto sm:max-w-md">
+        <DialogHeader className="pr-8">
+          <DialogTitle>Settings</DialogTitle>
+          <DialogDescription>
+            Word size and reading speed. Both are remembered in this browser.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="word-size">Word size</Label>
+              <div className="flex items-center gap-1.5">
+                <NumberField
+                  id="word-size"
+                  label="Word size percent"
+                  value={settings.wordSize}
+                  min={WORD_SIZE_MIN}
+                  max={WORD_SIZE_MAX}
+                  onCommit={updateWordSize}
+                  className="h-11 w-[4.5rem] bg-[#e8d5b8] text-center"
+                />
+                <span className="text-sm text-[#1a1a1a]/70">%</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="w-6 font-reading text-sm text-[#1a1a1a]/55">A</span>
+              <Slider
+                aria-label="Word size"
+                min={WORD_SIZE_MIN}
+                max={WORD_SIZE_MAX}
+                step={1}
+                value={[settings.wordSize]}
+                onValueChange={(value) => updateWordSize(sliderValue(value))}
+                className="flex-1"
+              />
+              <span className="w-8 text-right font-reading text-2xl leading-none text-[#1a1a1a]/55">
+                A
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="wpm">Words per minute</Label>
+              <NumberField
+                id="wpm"
+                label="Words per minute"
+                value={settings.wpm}
+                min={WPM_MIN}
+                max={WPM_MAX}
+                onCommit={updateWpm}
+                className="h-11 w-[4.5rem] bg-[#e8d5b8] text-center"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="w-8 text-xs tabular-nums text-[#1a1a1a]/55">
+                {WPM_MIN}
+              </span>
+              <Slider
+                aria-label="Words per minute"
+                min={WPM_MIN}
+                max={WPM_MAX}
+                step={1}
+                value={[settings.wpm]}
+                onValueChange={(value) => updateWpm(sliderValue(value))}
+                className="flex-1"
+              />
+              <span className="w-10 text-right text-xs tabular-nums text-[#1a1a1a]/55">
+                {WPM_MAX}
+              </span>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
