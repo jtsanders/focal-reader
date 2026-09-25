@@ -2,6 +2,9 @@ import {
   SKIP_DEFAULT,
   SKIP_MAX,
   SKIP_MIN,
+  WORD_SIZE_DEFAULT,
+  WORD_SIZE_MAX,
+  WORD_SIZE_MIN,
   WPM_DEFAULT,
   WPM_MAX,
   WPM_MIN,
@@ -10,6 +13,7 @@ import {
 
 const WPM_KEY = "focal:wpm";
 const SKIP_KEY = "focal:skip-seconds";
+const WORD_SIZE_KEY = "focal:word-size";
 
 function positionKey(fileName: string): string {
   return `focal:pos:${fileName}`;
@@ -52,6 +56,16 @@ export function loadSkipSeconds(): number {
 
 export function saveSkipSeconds(seconds: number): void {
   writeNumber(SKIP_KEY, clamp(Math.round(seconds), SKIP_MIN, SKIP_MAX));
+}
+
+export function loadWordSize(): number {
+  const stored = readNumber(WORD_SIZE_KEY);
+  if (stored == null) return WORD_SIZE_DEFAULT;
+  return clamp(Math.round(stored), WORD_SIZE_MIN, WORD_SIZE_MAX);
+}
+
+export function saveWordSize(size: number): void {
+  writeNumber(WORD_SIZE_KEY, clamp(Math.round(size), WORD_SIZE_MIN, WORD_SIZE_MAX));
 }
 
 export function loadPosition(fileName: string): number {

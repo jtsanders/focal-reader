@@ -4,6 +4,10 @@ export const WPM_DEFAULT = 300;
 export const SKIP_MIN = 1;
 export const SKIP_MAX = 60;
 export const SKIP_DEFAULT = 10;
+/** Word size as a percent of the usual on-screen size. */
+export const WORD_SIZE_MIN = 70;
+export const WORD_SIZE_MAX = 160;
+export const WORD_SIZE_DEFAULT = 100;
 export const RAMP_MS = 3000;
 
 /**

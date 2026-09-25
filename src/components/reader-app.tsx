@@ -13,11 +13,18 @@ import { ExtractError } from "@/lib/extract-error";
 import { openBookFile } from "@/lib/open-file";
 import { splitPivot } from "@/lib/pivot";
 import { SAMPLE_NAME, SAMPLE_TEXT } from "@/lib/sample";
-import { updateSkipSeconds, updateWpm, useReaderSettings } from "@/lib/settings";
+import {
+  updateSkipSeconds,
+  updateWordSize,
+  updateWpm,
+  useReaderSettings,
+} from "@/lib/settings";
 import { tokenize } from "@/lib/tokenize";
 import {
   SKIP_MAX,
   SKIP_MIN,
+  WORD_SIZE_MAX,
+  WORD_SIZE_MIN,
   WPM_MAX,
   WPM_MIN,
   clamp,
@@ -256,6 +263,7 @@ export function ReaderApp() {
           session={session}
           targetWpm={settings.wpm}
           skipSeconds={settings.skipSeconds}
+          wordSize={settings.wordSize}
           restartRef={restartRef}
         />
       ) : (
@@ -263,6 +271,7 @@ export function ReaderApp() {
           phase={phase}
           targetWpm={settings.wpm}
           skipSeconds={settings.skipSeconds}
+          wordSize={settings.wordSize}
           onOpen={() => fileRef.current?.click()}
           onSample={openSample}
         />
@@ -283,11 +292,13 @@ function ActiveSession({
   session,
   targetWpm,
   skipSeconds,
+  wordSize,
   restartRef,
 }: {
   session: ReaderSession;
   targetWpm: number;
   skipSeconds: number;
+  wordSize: number;
   restartRef: RefObject<(() => void) | null>;
 }) {
   const engine = useRsvp(session, targetWpm, skipSeconds);
@@ -382,7 +393,7 @@ function ActiveSession({
       <main className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 sm:px-8">
         {token ? (
           <div className="flex w-full max-w-5xl flex-col items-center">
-            <WordStage token={token} />
+            <WordStage token={token} size={wordSize} />
             <p className="mt-8 h-6 text-center text-sm tabular-nums text-[#1a1a1a]/60">
               {pace}
             </p>
@@ -398,6 +409,7 @@ function ActiveSession({
         wordsLeft={wordsLeft}
         targetWpm={targetWpm}
         skipSeconds={skipSeconds}
+        wordSize={wordSize}
         onToggle={engine.toggle}
         onSkip={engine.skip}
         onSeek={engine.seek}
@@ -410,12 +422,14 @@ function IdleStage({
   phase,
   targetWpm,
   skipSeconds,
+  wordSize,
   onOpen,
   onSample,
 }: {
   phase: Phase;
   targetWpm: number;
   skipSeconds: number;
+  wordSize: number;
   onOpen: () => void;
   onSample: () => void;
 }) {
@@ -456,6 +470,7 @@ function IdleStage({
         wordsLeft={0}
         targetWpm={targetWpm}
         skipSeconds={skipSeconds}
+        wordSize={wordSize}
         onToggle={() => undefined}
         onSkip={() => undefined}
         onSeek={() => undefined}
@@ -472,6 +487,7 @@ function Controls({
   wordsLeft,
   targetWpm,
   skipSeconds,
+  wordSize,
   onToggle,
   onSkip,
   onSeek,
@@ -483,6 +499,7 @@ function Controls({
   wordsLeft: number;
   targetWpm: number;
   skipSeconds: number;
+  wordSize: number;
   onToggle: () => void;
   onSkip: (direction: -1 | 1) => void;
   onSeek: (index: number) => void;
@@ -560,6 +577,35 @@ function Controls({
             >
               Ahead
             </Button>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="word-size">Word size</Label>
+          <div className="flex items-center gap-3">
+            <span className="w-8 font-reading text-sm text-[#1a1a1a]/55">A</span>
+            <Slider
+              aria-label="Word size"
+              min={WORD_SIZE_MIN}
+              max={WORD_SIZE_MAX}
+              step={1}
+              value={[wordSize]}
+              onValueChange={(value) => updateWordSize(sliderValue(value))}
+              className="flex-1"
+            />
+            <span className="w-10 text-right font-reading text-2xl leading-none text-[#1a1a1a]/55">
+              A
+            </span>
+            <NumberField
+              id="word-size"
+              label="Word size percent"
+              value={wordSize}
+              min={WORD_SIZE_MIN}
+              max={WORD_SIZE_MAX}
+              onCommit={updateWordSize}
+              className="h-11 w-[4.5rem] bg-[#e8d5b8] text-center"
+            />
+            <span className="text-sm text-[#1a1a1a]/70">%</span>
           </div>
         </div>
 

@@ -6,9 +6,10 @@ import { splitPivot } from "@/lib/pivot";
 
 type WordStageProps = {
   token: string;
+  size: number;
 };
 
-export function WordStage({ token }: WordStageProps) {
+export function WordStage({ token, size }: WordStageProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const wordRef = useRef<HTMLDivElement>(null);
   const { before, pivot, after } = splitPivot(token);
@@ -48,12 +49,14 @@ export function WordStage({ token }: WordStageProps) {
     const fonts = document.fonts;
     fonts?.ready.then(fit).catch(() => undefined);
     return () => observer.disconnect();
-  }, [after, before, pivot, token]);
+  }, [after, before, pivot, size, token]);
 
   return (
     <div
       ref={stageRef}
-      className="relative w-full select-none text-[clamp(2.75rem,9vw,6.5rem)] leading-none"
+      data-word-size={size}
+      className="relative w-full select-none leading-none"
+      style={{ fontSize: `calc(${size / 100} * clamp(2.75rem, 9vw, 6.5rem))` }}
     >
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-1/2">
         <span className="absolute bottom-full left-1/2 mb-[0.18em] h-[0.16em] w-px -translate-x-1/2 bg-[#1a1a1a]/30" />
